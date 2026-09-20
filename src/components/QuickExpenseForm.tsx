@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toDateInputValue } from "@/lib/calculations";
 import { CATEGORIES, PEOPLE } from "@/lib/constants";
 import type { CategoryId, PersonId } from "@/lib/types";
 
@@ -10,6 +11,7 @@ interface Props {
     categoryId: CategoryId;
     payer: PersonId;
     note: string;
+    date: string;
   }) => unknown | Promise<unknown>;
 }
 
@@ -20,6 +22,7 @@ export function QuickExpenseForm({ onAdd }: Props) {
   const [categoryId, setCategoryId] = useState<CategoryId>("food");
   const [payer, setPayer] = useState<PersonId>("kanoko");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(toDateInputValue);
   const [flash, setFlash] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,10 +45,10 @@ export function QuickExpenseForm({ onAdd }: Props) {
   }
 
   async function submit() {
-    if (amount <= 0 || submitting) return;
+    if (amount <= 0 || submitting || !date) return;
     setSubmitting(true);
     try {
-      await onAdd({ amount, categoryId, payer, note });
+      await onAdd({ amount, categoryId, payer, note, date });
       setDigits("");
       setNote("");
       setFlash(true);
@@ -110,6 +113,16 @@ export function QuickExpenseForm({ onAdd }: Props) {
       </div>
 
       <label className="mb-1 block text-xs font-medium text-stone-500">
+        日付
+      </label>
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="mb-3 h-12 w-full rounded-2xl bg-stone-50 px-4 text-base font-medium text-stone-900 ring-1 ring-inset ring-stone-200"
+      />
+
+      <label className="mb-1 block text-xs font-medium text-stone-500">
         カテゴリ
       </label>
       <select
@@ -162,7 +175,7 @@ export function QuickExpenseForm({ onAdd }: Props) {
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={amount <= 0 || submitting}
+        disabled={amount <= 0 || submitting || !date}
         className="h-14 w-full rounded-2xl bg-teal-700 text-lg font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-stone-300 active:bg-teal-800"
       >
         {submitting ? "登録中…" : "登録する"}

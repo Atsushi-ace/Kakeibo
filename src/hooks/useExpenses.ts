@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { currentMonthKey } from "@/lib/calculations";
+import {
+  currentMonthKey,
+  dateInputToIso,
+  monthKeyFromDateInput,
+  toDateInputValue,
+} from "@/lib/calculations";
 import {
   expenseToInsert,
   rowToExpense,
@@ -101,17 +106,21 @@ export function useExpenses() {
       categoryId: CategoryId;
       payer: PersonId;
       note?: string;
+      /** YYYY-MM-DD。省略時は今日 */
+      date?: string;
     }) => {
       setSaving(true);
       setError(null);
       try {
         const supabase = getSupabase();
+        const dateStr = input.date ?? toDateInputValue();
         const payload = expenseToInsert({
           amount: input.amount,
           categoryId: input.categoryId,
           payer: input.payer,
           note: (input.note ?? "").trim(),
-          month: currentMonthKey(),
+          month: monthKeyFromDateInput(dateStr),
+          createdAt: dateInputToIso(dateStr),
         });
 
         const { data, error: insertError } = await supabase

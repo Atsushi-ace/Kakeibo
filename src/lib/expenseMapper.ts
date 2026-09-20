@@ -29,12 +29,14 @@ export function expenseToInsert(input: {
   payer: PersonId;
   note: string;
   month: string;
-}): Omit<ExpenseRow, "id" | "created_at"> {
+  createdAt: string;
+}): Omit<ExpenseRow, "id"> {
   return {
     amount: input.amount,
     category_id: input.categoryId,
     payer: input.payer,
     note: input.note,
     month: input.month,
+    created_at: input.createdAt,
   };
 }

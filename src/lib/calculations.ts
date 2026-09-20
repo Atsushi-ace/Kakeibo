@@ -15,6 +15,36 @@ export function currentMonthKey(date = new Date()): string {
   return `${y}-${m}`;
 }
 
+/** input[type=date] 用の YYYY-MM-DD（ローカル日付） */
+export function toDateInputValue(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** YYYY-MM-DD をローカル時刻つき ISO に変換 */
+export function dateInputToIso(dateStr: string, base = new Date()): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return base.toISOString();
+  const local = new Date(
+    y,
+    m - 1,
+    d,
+    base.getHours(),
+    base.getMinutes(),
+    base.getSeconds(),
+  );
+  return local.toISOString();
+}
+
+/** YYYY-MM-DD から month キーを作る */
+export function monthKeyFromDateInput(dateStr: string): string {
+  const [y, m] = dateStr.split("-");
+  if (!y || !m) return currentMonthKey();
+  return `${y}-${m}`;
+}
+
 export function formatYen(amount: number): string {
   const rounded = Math.round(amount);
   const abs = Math.abs(rounded).toLocaleString("ja-JP");
