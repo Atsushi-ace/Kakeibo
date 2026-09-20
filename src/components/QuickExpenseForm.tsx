@@ -10,7 +10,7 @@ interface Props {
     categoryId: CategoryId;
     payer: PersonId;
     note: string;
-  }) => void;
+  }) => unknown | Promise<unknown>;
 }
 
 const QUICK_AMOUNTS = [500, 1000, 1500, 2000, 3000, 5000];
@@ -21,6 +21,7 @@ export function QuickExpenseForm({ onAdd }: Props) {
   const [payer, setPayer] = useState<PersonId>("kanoko");
   const [note, setNote] = useState("");
   const [flash, setFlash] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const amount = digits === "" ? 0 : Number(digits);
 
@@ -40,13 +41,20 @@ export function QuickExpenseForm({ onAdd }: Props) {
     setDigits("");
   }
 
-  function submit() {
-    if (amount <= 0) return;
-    onAdd({ amount, categoryId, payer, note });
-    setDigits("");
-    setNote("");
-    setFlash(true);
-    window.setTimeout(() => setFlash(false), 700);
+  async function submit() {
+    if (amount <= 0 || submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd({ amount, categoryId, payer, note });
+      setDigits("");
+      setNote("");
+      setFlash(true);
+      window.setTimeout(() => setFlash(false), 700);
+    } catch {
+      /* エラー表示は親側 */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -153,11 +161,11 @@ export function QuickExpenseForm({ onAdd }: Props) {
 
       <button
         type="button"
-        onClick={submit}
-        disabled={amount <= 0}
+        onClick={() => void submit()}
+        disabled={amount <= 0 || submitting}
         className="h-14 w-full rounded-2xl bg-teal-700 text-lg font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-stone-300 active:bg-teal-800"
       >
-        登録する
+        {submitting ? "登録中…" : "登録する"}
       </button>
     </section>
   );

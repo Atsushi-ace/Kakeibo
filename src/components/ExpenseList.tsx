@@ -6,7 +6,7 @@ import type { Expense } from "@/lib/types";
 
 interface Props {
   expenses: Expense[];
-  onRemove: (id: string) => void;
+  onRemove: (id: string) => void | Promise<void>;
 }
 
 export function ExpenseList({ expenses, onRemove }: Props) {
@@ -64,7 +64,7 @@ export function ExpenseList({ expenses, onRemove }: Props) {
               </span>
               <button
                 type="button"
-                onClick={() => onRemove(e.id)}
+                onClick={() => void onRemove(e.id)}
                 className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-medium text-stone-400 active:bg-stone-100 active:text-red-600"
                 aria-label="削除"
               >

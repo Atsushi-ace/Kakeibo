@@ -19,8 +19,15 @@ import {
 type Tab = "home" | "trend";
 
 export function HomeApp() {
-  const { expenses, monthExpenses, hydrated, addExpense, removeExpense, month } =
-    useExpenses();
+  const {
+    expenses,
+    monthExpenses,
+    hydrated,
+    error,
+    addExpense,
+    removeExpense,
+    month,
+  } = useExpenses();
   const [tab, setTab] = useState<Tab>("home");
 
   if (!hydrated) {
@@ -62,12 +69,17 @@ export function HomeApp() {
           <p className="mt-2 text-[10px] text-stone-400">
             {PEOPLE.atsushi.name} {formatYen(PEOPLE.atsushi.income)} ·{" "}
             {PEOPLE.kanoko.name} {formatYen(PEOPLE.kanoko.income)}
-            {" · "}この端末に自動保存
+            {" · "}クラウド同期中
           </p>
         </div>
       </header>
 
       <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+        {error && (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
+            同期エラー: {error}
+          </div>
+        )}
         {tab === "home" ? (
           <>
             <QuickExpenseForm onAdd={addExpense} />

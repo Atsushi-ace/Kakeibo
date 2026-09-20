@@ -2,75 +2,93 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { currentMonthKey } from "@/lib/calculations";
-import { STORAGE_KEY } from "@/lib/constants";
-import type { AppState, CategoryId, Expense, PersonId } from "@/lib/types";
+import {
+  expenseToInsert,
+  rowToExpense,
+  type ExpenseRow,
+} from "@/lib/expenseMapper";
+import { getSupabase } from "@/lib/supabase";
+import type { CategoryId, Expense, PersonId } from "@/lib/types";
 
-const EMPTY: AppState = { expenses: [] };
-
-function normalizeExpense(raw: Partial<Expense>): Expense | null {
-  if (
-    typeof raw.id !== "string" ||
-    typeof raw.amount !== "number" ||
-    typeof raw.categoryId !== "string" ||
-    typeof raw.payer !== "string" ||
-    typeof raw.createdAt !== "string" ||
-    typeof raw.month !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: raw.id,
-    amount: raw.amount,
-    categoryId: raw.categoryId as CategoryId,
-    payer: raw.payer as PersonId,
-    note: typeof raw.note === "string" ? raw.note : "",
-    createdAt: raw.createdAt,
-    month: raw.month,
-  };
-}
-
-function loadState(): AppState {
-  if (typeof window === "undefined") return EMPTY;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as AppState;
-    if (!parsed || !Array.isArray(parsed.expenses)) return EMPTY;
-    return {
-      expenses: parsed.expenses
-        .map((e) => normalizeExpense(e))
-        .filter((e): e is Expense => e !== null),
-    };
-  } catch {
-    return EMPTY;
-  }
-}
-
-function saveState(state: AppState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function createId(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+function sortByNewest(list: Expense[]): Expense[] {
+  return [...list].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 }
 
 export function useExpenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const month = currentMonthKey();
 
-  useEffect(() => {
-    setExpenses(loadState().expenses);
-    setHydrated(true);
+  const refresh = useCallback(async () => {
+    const supabase = getSupabase();
+    const { data, error: fetchError } = await supabase
+      .from("expenses")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (fetchError) {
+      throw new Error(fetchError.message);
+    }
+
+    const rows = (data ?? []) as ExpenseRow[];
+    setExpenses(sortByNewest(rows.map(rowToExpense)));
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
-    saveState({ expenses });
-  }, [expenses, hydrated]);
+    let cancelled = false;
+
+    async function init() {
+      try {
+        await refresh();
+        if (!cancelled) setError(null);
+      } catch (e) {
+        if (!cancelled) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : "データの読み込みに失敗しました",
+          );
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    }
+
+    void init();
+
+    let channel: ReturnType<ReturnType<typeof getSupabase>["channel"]> | null =
+      null;
+
+    try {
+      const supabase = getSupabase();
+      channel = supabase
+        .channel("expenses-sync")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "expenses" },
+          () => {
+            void refresh().catch(() => {
+              /* リアルタイム更新失敗は無視（手動操作は生きる） */
+            });
+          },
+        )
+        .subscribe();
+    } catch {
+      /* 環境変数未設定時は init 側で error 表示 */
+    }
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        void getSupabase().removeChannel(channel);
+      }
+    };
+  }, [refresh]);
 
   const monthExpenses = useMemo(
     () => expenses.filter((e) => e.month === month),
@@ -78,43 +96,80 @@ export function useExpenses() {
   );
 
   const addExpense = useCallback(
-    (input: {
+    async (input: {
       amount: number;
       categoryId: CategoryId;
       payer: PersonId;
       note?: string;
     }) => {
-      const next: Expense = {
-        id: createId(),
-        amount: input.amount,
-        categoryId: input.categoryId,
-        payer: input.payer,
-        note: (input.note ?? "").trim(),
-        createdAt: new Date().toISOString(),
-        month: currentMonthKey(),
-      };
-      setExpenses((prev) => [next, ...prev]);
-      return next;
+      setSaving(true);
+      setError(null);
+      try {
+        const supabase = getSupabase();
+        const payload = expenseToInsert({
+          amount: input.amount,
+          categoryId: input.categoryId,
+          payer: input.payer,
+          note: (input.note ?? "").trim(),
+          month: currentMonthKey(),
+        });
+
+        const { data, error: insertError } = await supabase
+          .from("expenses")
+          .insert(payload)
+          .select("*")
+          .single();
+
+        if (insertError) throw new Error(insertError.message);
+
+        const created = rowToExpense(data as ExpenseRow);
+        setExpenses((prev) => sortByNewest([created, ...prev]));
+        return created;
+      } catch (e) {
+        const message =
+          e instanceof Error ? e.message : "登録に失敗しました";
+        setError(message);
+        throw e;
+      } finally {
+        setSaving(false);
+      }
     },
     [],
   );
 
-  const removeExpense = useCallback((id: string) => {
+  const removeExpense = useCallback(async (id: string) => {
+    setSaving(true);
+    setError(null);
+    const previous = expenses;
     setExpenses((prev) => prev.filter((e) => e.id !== id));
-  }, []);
 
-  const clearMonth = useCallback(() => {
-    const m = currentMonthKey();
-    setExpenses((prev) => prev.filter((e) => e.month !== m));
-  }, []);
+    try {
+      const supabase = getSupabase();
+      const { error: deleteError } = await supabase
+        .from("expenses")
+        .delete()
+        .eq("id", id);
+
+      if (deleteError) throw new Error(deleteError.message);
+    } catch (e) {
+      setExpenses(previous);
+      const message =
+        e instanceof Error ? e.message : "削除に失敗しました";
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [expenses]);
 
   return {
     expenses,
     monthExpenses,
     month,
     hydrated,
+    error,
+    saving,
     addExpense,
     removeExpense,
-    clearMonth,
+    refresh,
   };
 }
